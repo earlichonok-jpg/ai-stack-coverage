@@ -183,7 +183,7 @@ tbody tr:hover .row-del{ opacity:1; }
 .link-input:focus{ color: var(--accent-hot); border-bottom-color: var(--accent-dim); }
 .link-input::placeholder{ color: var(--text-faint); }
 
-td.toggle-cell{ text-align:center; padding:8px; }
+td.toggle-cell{ text-align:center; padding:8px; vertical-align: middle; }
 .cell-toggle{
   width:30px; height:30px; border-radius:50%;
   background: transparent; border: 1.5px solid var(--border);
@@ -245,6 +245,76 @@ td.filler-cell{ background: var(--surface-2); }
   max-width: 640px;
 }
 
+.cancel-wrap{
+  margin-top: 36px; padding-top: 18px;
+  border-top: 1px dashed var(--border);
+  max-width: 900px;
+}
+.cancel-header{ display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+.cancel-header h2{
+  font-family: var(--font-body); font-weight:700; font-size:13.5px;
+  color: var(--text-dim); margin:0; letter-spacing:.01em;
+  display:flex; align-items:center; gap:8px;
+}
+.cancel-header h2::before{
+  content:""; width:7px; height:7px; border-radius:50%;
+  background: var(--text-faint); display:inline-block;
+}
+.cancel-sub{ font-size:11.5px; color: var(--text-faint); margin: 0 0 12px; line-height:1.5; }
+
+.cancel-list{ display:flex; flex-direction:column; gap:6px; }
+.cancel-row{
+  display:flex; align-items:flex-start; gap:10px;
+  padding: 7px 10px; border-radius:7px;
+  background: transparent; border: 1px solid var(--border-soft);
+  opacity: .8; transition: opacity .15s ease, background .15s ease;
+}
+.cancel-row:hover{ opacity:1; background: var(--surface); }
+.cancel-row.done{ opacity:.4; }
+.cancel-row.done .cancel-service, .cancel-row.done .cancel-note{ text-decoration: line-through; }
+
+.cancel-done{
+  margin-top:3px; width:14px; height:14px;
+  accent-color: var(--text-dim); cursor:pointer; flex-shrink:0;
+}
+
+.cancel-service{
+  font-family: var(--font-body); font-weight:600; font-size:12.5px;
+  color: var(--text-dim); min-width:140px; max-width:200px;
+  outline:none; cursor:text; line-height:1.4;
+  overflow-wrap: break-word; word-break: break-word;
+}
+.cancel-service:empty::before{ content: attr(data-placeholder); color: var(--text-faint); font-weight:500; }
+.cancel-service:focus{ color: var(--text); }
+
+.cancel-note{
+  flex:1; font-family: var(--font-body); font-size:12.5px;
+  color: var(--text-faint); outline:none; cursor:text; line-height:1.4;
+  overflow-wrap: break-word; word-break: break-word;
+}
+.cancel-note:empty::before{ content: attr(data-placeholder); color: var(--text-faint); opacity:.7; }
+.cancel-note:focus{ color: var(--text-dim); }
+
+.cancel-del{
+  width:16px; height:16px; border-radius:50%;
+  background: var(--surface); border:1px solid var(--border);
+  color: var(--text-faint); font-size:11px; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; opacity:0; transition: all .15s ease;
+  flex-shrink:0; margin-top:1px;
+}
+.cancel-row:hover .cancel-del{ opacity:1; }
+.cancel-del:hover{ background: var(--danger); border-color: var(--danger); color:#fff; }
+
+.add-cancel-btn{
+  margin-top:8px;
+  font-family: var(--font-body); font-weight:500; font-size:12px;
+  color: var(--text-dim); background: transparent;
+  border: 1px dashed var(--border); border-radius:7px;
+  padding: 6px 12px; cursor:pointer; transition: all .15s ease;
+}
+.add-cancel-btn:hover{ color: var(--text); border-color: var(--text-faint); background: var(--surface); }
+
 .loading-overlay{
   position:fixed; inset:0; background: var(--bg);
   display:flex; align-items:center; justify-content:center;
@@ -286,6 +356,13 @@ td.filler-cell{ background: var(--surface-2); }
     Кружок между сервисом и нейросетью имеет три состояния: пусто → half (частично покрыл) → полностью залит (полностью покрыл).
     Колонки сами подстраивают ширину под экран, чтобы таблица помещалась целиком; если добавите слишком много нейросетей — появится горизонтальный скролл.
   </p>
+
+  <div class="cancel-wrap" id="cancelWrap">
+    <div class="cancel-header"><h2>На пересмотр / отмену подписки</h2></div>
+    <p class="cancel-sub">Черновой список — что стоит отменить или пересмотреть. Галочка слева — просто отметка «разобрался», записи не пропадают.</p>
+    <div class="cancel-list" id="cancelListEl"></div>
+    <button id="addCancelBtn" class="add-cancel-btn">+ добавить</button>
+  </div>
 </div>
 
 <script type="module">
@@ -333,7 +410,8 @@ function defaultState(){
   ];
   return {
     columns: cols,
-    rows: [{ id: genId('r'), service:'', link:'', comment:'', checks:{} }]
+    rows: [{ id: genId('r'), service:'', link:'', comment:'', checks:{} }],
+    cancelList: [{ id: genId('x'), service:'', note:'', done:false }]
   };
 }
 
@@ -350,6 +428,8 @@ function normalizeState(s){
       r.checks[k] = v;
     });
   });
+  if (!Array.isArray(s.cancelList)) s.cancelList = [];
+  s.cancelList.forEach(item => { item.done = !!item.done; });
   return s;
 }
 
@@ -409,7 +489,7 @@ function showStatus(text, kind){
 function isEditingActive(){
   const el = document.activeElement;
   if (!el || !el.closest) return false;
-  if (!el.closest('#grid')) return false;
+  if (!el.closest('#grid') && !el.closest('#cancelWrap')) return false;
   return el.isContentEditable || el.tagName === 'TEXTAREA' || el.tagName === 'INPUT';
 }
 
@@ -531,6 +611,18 @@ function render(){
   }).join('');
 
   layoutColumns();
+  renderCancelList();
+}
+
+function renderCancelList(){
+  const el = document.getElementById('cancelListEl');
+  el.innerHTML = state.cancelList.map(item => `
+    <div class="cancel-row ${item.done ? 'done' : ''}" data-cid="${item.id}">
+      <input type="checkbox" class="cancel-done" data-action="toggle-cancel-done" data-cid="${item.id}" ${item.done ? 'checked' : ''} title="Отметить как решено">
+      <div class="cancel-service single-line" contenteditable="true" data-field="cservice" data-cid="${item.id}" data-placeholder="сервис">${escapeHtml(item.service)}</div>
+      <div class="cancel-note single-line" contenteditable="true" data-field="cnote" data-cid="${item.id}" data-placeholder="причина / когда отменить">${escapeHtml(item.note)}</div>
+      <button class="cancel-del" data-action="del-cancel" data-cid="${item.id}" title="Удалить">×</button>
+    </div>`).join('');
 }
 
 function onGridClick(e){
@@ -594,6 +686,45 @@ document.getElementById('addRowBtn').addEventListener('click', () => {
   persist(); render();
   requestAnimationFrame(() => focusAndSelect(`.service-name[data-row="${id}"]`));
 });
+
+function onCancelClick(e){
+  const t = e.target.closest('[data-action]');
+  if (!t) return;
+  const action = t.dataset.action;
+
+  if (action === 'del-cancel'){
+    if (!confirm('Удалить эту запись?')) return;
+    state.cancelList = state.cancelList.filter(x => x.id !== t.dataset.cid);
+    persist(); render();
+  } else if (action === 'toggle-cancel-done'){
+    const item = state.cancelList.find(x => x.id === t.dataset.cid);
+    if (item) item.done = t.checked;
+    persist(); render();
+  }
+}
+
+function onCancelFocusOut(e){
+  const t = e.target;
+  const field = t.dataset && t.dataset.field;
+  if (!field) return;
+  const item = state.cancelList.find(x => x.id === t.dataset.cid);
+  if (!item) return;
+  if (field === 'cservice') item.service = t.textContent.trim();
+  else if (field === 'cnote') item.note = t.textContent.trim();
+  persist(); render();
+}
+
+document.getElementById('addCancelBtn').addEventListener('click', () => {
+  const id = genId('x');
+  state.cancelList.push({ id, service:'', note:'', done:false });
+  persist(); render();
+  requestAnimationFrame(() => focusAndSelect(`.cancel-service[data-cid="${id}"]`));
+});
+
+const cancelWrap = document.getElementById('cancelWrap');
+cancelWrap.addEventListener('click', onCancelClick);
+cancelWrap.addEventListener('focusout', onCancelFocusOut);
+cancelWrap.addEventListener('keydown', onGridKeydown);
 
 document.getElementById('refreshBtn').addEventListener('click', async (e) => {
   e.currentTarget.classList.remove('spin'); void e.currentTarget.offsetWidth; e.currentTarget.classList.add('spin');
